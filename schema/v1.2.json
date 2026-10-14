@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sqi.invalid/schema/v1.2.json",
+  "title": "Contratto dati motore SQI <-> app Solaris, v1.2",
+  "description": "Una definizione per file in $defs: manifest, points, forecast, potential, coverage. Si valida ogni file contro la sua: {\"$ref\": \"v1.2.json#/$defs/<file>\"}. Vincoli non esprimibili qui (5 decimali, ordine delle fasce, riferimenti fra file): contratto/v1.2.md, sezione 9, e contratto/test_contratto.py.",
+  "$defs": {
+    "lonlat": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number", "minimum": -180, "maximum": 180},
+        {"type": "number", "minimum": -90, "maximum": 90}
+      ],
+      "items": false,
+      "minItems": 2
+    },
+    "local_datetime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:00[+-]\\d{2}:\\d{2}$"
+    },
+    "utc_datetime": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:00:00Z$"
+    },
+    "local_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "probability": {"type": "number", "minimum": 0, "maximum": 1},
+    "point_id": {"type": "string", "pattern": "^osm:node/[1-9][0-9]*$"},
+    "polygonal": {
+      "type": "object",
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": {"enum": ["Polygon", "MultiPolygon"]},
+        "coordinates": {"type": "array", "minItems": 1}
+      }
+    },
+    "band_prob": {
+      "type": "object",
+      "required": ["id", "max", "observed_rate", "n_calibration", "rate_source"],
+      "properties": {
+        "id": {"type": "string"},
+        "max": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "observed_rate": {"$ref": "#/$defs/probability"},
+        "n_calibration": {"type": "integer", "minimum": 1},
+        "rate_source": {"enum": ["calibration_sample", "pool_model"]}
+      }
+    },
+
+    "manifest": {
+      "type": "object",
+      "required": ["schema_version", "generated_at", "timezone", "engine", "evenings", "points", "coverage", "bands",
+                   "attribution", "demo"],
+      "properties": {
+        "schema_version": {"const": "1.2"},
+        "generated_at": {"$ref": "#/$defs/local_datetime"},
+        "timezone": {"const": "Europe/Rome"},
+        "engine": {
+          "type": "object",
+          "required": ["version", "form_hash", "calibration_hash", "beta", "validated", "best_time_bias_corrected",
+                       "calibrated_lead_h_max"],
+          "properties": {
+            "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+            "form_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "calibration_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "beta": {"type": "boolean"},
+            "validated": {"type": "boolean"},
+            "best_time_bias_corrected": {"const": false},
+            "calibrated_lead_h_max": {"const": 3}
+          }
+        },
+        "evenings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["date", "weather_model", "lead_time_h", "within_calibrated_lead", "lead_reliability",
+                         "forecast", "potential"],
+            "properties": {
+              "date": {"$ref": "#/$defs/local_date"},
+              "weather_model": {
+                "type": "object",
+                "required": ["name", "run"],
+                "properties": {
+                  "name": {"const": "ICON-D2"},
+                  "run": {"$ref": "#/$defs/utc_datetime"}
+                }
+              },
+              "lead_time_h": {"type": "integer", "minimum": 0},
+              "within_calibrated_lead": {"type": "boolean"},
+              "lead_reliability": {"enum": ["calibrated", "measured_close", "measured_degraded", "unmeasured"]},
+              "forecast": {"type": "string", "pattern": "^forecast_\\d{4}-\\d{2}-\\d{2}_[0-9a-f]{6}\\.json$"},
+              "potential": {"type": "string", "pattern": "^potential_\\d{4}-\\d{2}-\\d{2}_[0-9a-f]{6}\\.geojson$"},
+              "demo_case": {"enum": ["dull", "worth", "spectacular", "low_deck", "clear", "sea_of_clouds"]}
+            },
+            "if": {"properties": {"lead_reliability": {"const": "calibrated"}}},
+            "then": {"properties": {"within_calibrated_lead": {"const": true}}},
+            "else": {"properties": {"within_calibrated_lead": {"const": false}}}
+          }
+        },
+        "points": {
+          "type": "object", "required": ["file"],
+          "properties": {"file": {"type": "string", "pattern": "^points_[0-9a-f]{6}\\.geojson$"}}
+        },
+        "coverage": {
+          "type": "object", "required": ["file"],
+          "properties": {"file": {"type": "string", "pattern": "^coverage_[0-9a-f]{6}\\.geojson$"}}
+        },
+        "bands": {
+          "type": "object",
+          "required": ["worth", "spectacular", "potential"],
+          "properties": {
+            "worth": {"type": "array", "minItems": 2,
+                      "items": {"allOf": [{"$ref": "#/$defs/band_prob"},
+                                          {"properties": {"id": {"enum": ["low", "mid", "high"]}}}]}},
+            "spectacular": {"type": "array", "minItems": 2,
+                            "items": {"allOf": [{"$ref": "#/$defs/band_prob"},
+                                                {"properties": {"id": {"enum": ["low", "high"]}}}]}},
+            "potential": {"type": "array", "minItems": 2,
+                          "items": {"type": "object", "required": ["id", "max"],
+                                    "properties": {"id": {"enum": ["zero", "low", "mid", "high", "top"]},
+                                                   "max": {"type": ["number", "null"], "minimum": 0, "maximum": 1}}}}
+          }
+        },
+        "diagnostics": {
+          "type": "object",
+          "properties": {"spectacular_clipped_count": {"type": "integer", "minimum": 0}}
+        },
+        "attribution": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["text", "url", "license_url", "scope"],
+            "properties": {
+              "text": {"type": "string", "minLength": 1},
+              "url": {"type": "string", "pattern": "^https://"},
+              "license_url": {"type": "string", "pattern": "^https://"},
+              "scope": {"enum": ["map", "forecast", "horizon", "credits"]}
+            }
+          }
+        },
+        "demo": {"type": "boolean"}
+      },
+      "if": {"properties": {"demo": {"const": true}}},
+      "then": {"properties": {"evenings": {"items": {"required": ["demo_case"]}}}},
+      "else": {"properties": {"evenings": {"items": {"not": {"required": ["demo_case"]}}}}}
+    },
+
+    "points": {
+      "type": "object",
+      "required": ["type", "features"],
+      "properties": {
+        "type": {"const": "FeatureCollection"},
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "geometry", "properties"],
+            "properties": {
+              "type": {"const": "Feature"},
+              "geometry": {
+                "type": "object", "required": ["type", "coordinates"],
+                "properties": {"type": {"const": "Point"}, "coordinates": {"$ref": "#/$defs/lonlat"}}
+              },
+              "properties": {
+                "type": "object",
+                "required": ["id", "name", "kind", "elevation_m", "elevation_source", "zone", "horizon"],
+                "properties": {
+                  "id": {"$ref": "#/$defs/point_id"},
+                  "merged_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/point_id"}},
+                  "name": {"type": ["string", "null"]},
+                  "names": {"type": "object", "additionalProperties": {"type": "string"}},
+                  "kind": {"enum": ["peak", "viewpoint"]},
+                  "elevation_m": {"type": "integer"},
+                  "elevation_source": {"enum": ["osm", "dem"]},
+                  "zone": {"type": "string"},
+                  "horizon": {
+                    "type": "object",
+                    "required": ["source", "start_az_deg", "step_deg", "elevation_deg"],
+                    "properties": {
+                      "source": {"const": "glo30"},
+                      "start_az_deg": {"const": 180},
+                      "step_deg": {"const": 2},
+                      "elevation_deg": {"type": "array", "minItems": 90, "maxItems": 90,
+                                        "items": {"type": "number", "minimum": -90, "maximum": 90}}
+                    }
+                  },
+                  "access": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "forecast": {
+      "type": "object",
+      "required": ["date", "points"],
+      "properties": {
+        "date": {"$ref": "#/$defs/local_date"},
+        "points": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/point_id"},
+          "additionalProperties": {"$ref": "#/$defs/forecast_point"}
+        }
+      }
+    },
+    "forecast_point": {
+      "type": "object",
+      "required": ["sunset_flat_horizon", "sunset_azimuth_deg", "ridge_elevation_deg", "p_worth", "p_spectacular",
+                   "canvas", "limiting_factors", "flags"],
+      "properties": {
+        "sunset_flat_horizon": {"$ref": "#/$defs/local_datetime"},
+        "sunset_azimuth_deg": {"type": "number", "minimum": 0, "maximum": 360},
+        "sun_hidden_at": {"$ref": "#/$defs/local_datetime"},
+        "ridge_elevation_deg": {"type": "number", "minimum": -90, "maximum": 90},
+        "p_worth": {"$ref": "#/$defs/probability"},
+        "p_spectacular": {"$ref": "#/$defs/probability"},
+        "best_time": {"$ref": "#/$defs/local_datetime"},
+        "best_window": {
+          "type": "object", "required": ["start", "end"],
+          "properties": {"start": {"$ref": "#/$defs/local_datetime"}, "end": {"$ref": "#/$defs/local_datetime"}}
+        },
+        "canvas": {"enum": ["high_cloud", "mid_cloud", "clear", "low_deck_top", "none"]},
+        "limiting_factors": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": ["low_deck_overhead", "low_cloud", "sun_blocked_horizon", "sun_blocked_clouds",
+                             "no_canvas", "canvas_out_of_view", "unattributed"]}
+        },
+        "visible_canvas_km": false,
+        "visible_canvas_max_km": {"type": "integer", "minimum": 0},
+        "flags": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": ["possible_sea_of_clouds", "sun_hidden_all_afternoon"]}
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"canvas": {"const": "none"}}},
+          "then": {"not": {"anyOf": [{"required": ["best_time"]}, {"required": ["best_window"]}]}},
+          "else": {"required": ["best_time", "best_window"]}
+        },
+        {
+          "if": {"properties": {"flags": {"contains": {"const": "sun_hidden_all_afternoon"}}}},
+          "then": {"not": {"required": ["sun_hidden_at"]}},
+          "else": {"required": ["sun_hidden_at"]}
+        },
+        {
+          "if": {"properties": {"canvas": {"enum": ["high_cloud", "mid_cloud"]}}},
+          "else": {"not": {"required": ["visible_canvas_max_km"]}}
+        },
+        {
+          "if": {"properties": {"flags": {"contains": {"const": "possible_sea_of_clouds"}}}},
+          "then": {"properties": {"limiting_factors": {"not": {"contains": {"enum": ["low_deck_overhead", "low_cloud"]}}}}}
+        }
+      ]
+    },
+
+    "potential": {
+      "type": "object",
+      "required": ["type", "features"],
+      "properties": {
+        "type": {"const": "FeatureCollection"},
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "geometry", "properties"],
+            "properties": {
+              "type": {"const": "Feature"},
+              "geometry": {"$ref": "#/$defs/polygonal"},
+              "properties": {
+                "type": "object",
+                "required": ["band", "value_min", "value_max"],
+                "properties": {
+                  "band": {"enum": ["zero", "low", "mid", "high", "top"]},
+                  "value_min": {"type": "number", "minimum": 0, "maximum": 1},
+                  "value_max": {"type": "number", "minimum": 0, "maximum": 1}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "coverage": {
+      "type": "object",
+      "required": ["type", "features"],
+      "properties": {
+        "type": {"const": "FeatureCollection"},
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "geometry", "properties"],
+            "properties": {
+              "type": {"const": "Feature"},
+              "geometry": {"$ref": "#/$defs/polygonal"},
+              "properties": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["kind", "id", "name", "calibration", "reference_point"],
+                    "properties": {
+                      "kind": {"const": "zone"},
+                      "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+                      "name": {"type": "string"},
+                      "calibration": {"enum": ["alps", "indicative"]},
+                      "reference_point": {"$ref": "#/$defs/lonlat"}
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["kind", "zone", "until"],
+                    "properties": {
+                      "kind": {"const": "fenced"},
+                      "zone": {"type": "string"},
+                      "until": {"$ref": "#/$defs/local_date"}
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

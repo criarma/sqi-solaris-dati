@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQI · dati per Solaris</title>
+<style>
+  :root { --bg: #fbfaf7; --fg: #1f2328; --muted: #5d636b; --line: #e3e0d8; --accent: #b4532a; --card: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181b; --fg: #e8e6e1; --muted: #a2a7ad; --line: #2c3035; --accent: #e08a5c; --card: #1d2024; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 32px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  p { margin: 8px 0; }
+  .sub { color: var(--muted); margin-bottom: 24px; }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  a { color: var(--accent); }
+  code { font: 0.92em ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+  .state { font-size: .9rem; color: var(--muted); }
+  .credits p { font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SQI · dati per Solaris</h1>
+  <p class="sub">Dati del motore SQI (qualità del tramonto) per l'app Solaris. Beta non validata, uso non commerciale.</p>
+
+  <h2>Contratto</h2>
+  <div class="card">
+    <ul>
+      <li><a href="https://github.com/criarma/sqi-solaris-dati/blob/main/contratto/v1.2.md">Contratto v1.2</a> (<a href="contratto/v1.2.md">testo grezzo</a>): l'unica fonte, insieme allo schema.</li>
+      <li><a href="schema/v1.2.json">schema/v1.2.json</a>: JSON Schema 2020-12, una definizione per file in <code>$defs</code>.</li>
+      <li><a href="tools/test_contratto.py">tools/test_contratto.py</a>: valida una cartella pubblicata contro lo schema e i vincoli della sezione 9 (<code>pip install jsonschema shapely</code>).</li>
+    </ul>
+  </div>
+
+  <h2>Esempi</h2>
+  <div class="card">
+    <ul>
+      <li><a href="examples/manifest.json">examples/manifest.json</a>: una pubblicazione d'esempio (stasera e domani).</li>
+      <li><a href="examples/demo/manifest.json">examples/demo/manifest.json</a>: una demo d'esempio con date segnaposto.</li>
+    </ul>
+    <p class="state">Geometrie, punti, orizzonti e orari del Sole sono reali; probabilità, tela e potenziale sono illustrativi.</p>
+  </div>
+
+  <h2>Demo</h2>
+  <div class="card">
+    <p><a href="demo/manifest.json">demo/manifest.json</a>: serate passate vere, calcolate dal motore congelato con previsioni a 0–3 h, più una serata «di domani» dalla corsa del giorno prima.</p>
+    <p class="state" id="demo-state">Stato: in preparazione.</p>
+  </div>
+
+  <h2>Dati del giorno</h2>
+  <div class="card">
+    <p><a href="manifest.json">manifest.json</a>: stasera e domani, aggiornati dopo le corse ICON-D2 delle 06 e delle 12 UTC.</p>
+    <p class="state" id="live-state">Stato: non ancora attivo.</p>
+  </div>
+
+  <h2>Crediti</h2>
+  <div class="card credits">
+    <p>Mappa e punti: © OpenStreetMap contributors, <a href="https://opendatacommons.org/licenses/odbl/">ODbL</a> (<a href="https://www.openstreetmap.org/copyright">openstreetmap.org/copyright</a>).</p>
+    <p>Previsioni: Weather data by <a href="https://open-meteo.com/">Open-Meteo.com</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Datenbasis: Deutscher Wetterdienst, eigene Elemente ergänzt.</p>
+    <p>Orizzonti: produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30.</p>
+    <p class="state">Le probabilità sono imparate dai giudizi di un solo fotografo su immagini di webcam alpine. Sull'Appennino i valori sono indicativi. Il motore non valuta il mare di nuvole.</p>
+  </div>
+</main>
+<script>
+  for (const [path, id] of [["demo/manifest.json", "demo-state"], ["manifest.json", "live-state"]]) {
+    fetch(path, { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(m => {
+      if (!m) return;
+      const sere = m.evenings.map(e => e.date + (e.demo_case ? " (" + e.demo_case + ")" : "")).join(", ");
+      document.getElementById(id).textContent = "Generato " + m.generated_at + ". Serate: " + sere + ".";
+    }).catch(() => {});
+  }
+</script>
+</body>
+</html>
