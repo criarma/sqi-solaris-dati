@@ -43,21 +43,21 @@
   <div class="card">
     <ul>
       <li><a href="examples/manifest.json">examples/manifest.json</a>: una pubblicazione d'esempio (stasera e domani).</li>
-      <li><a href="examples/demo/manifest.json">examples/demo/manifest.json</a>: una demo d'esempio con date segnaposto.</li>
+      
     </ul>
     <p class="state">Geometrie, punti, orizzonti e orari del Sole sono reali; probabilità, tela e potenziale sono illustrativi.</p>
   </div>
 
   <h2>Demo</h2>
   <div class="card">
-    <p><a href="demo/manifest.json">demo/manifest.json</a>: serate passate vere, calcolate dal motore congelato con previsioni a 0–3 h, più una serata «di domani» dalla corsa del giorno prima.</p>
-    <p class="state" id="demo-state">Stato: in preparazione.</p>
+    <p><a href="demo/manifest.json">demo/manifest.json</a>: serate passate vere, calcolate dal motore congelato con previsioni a 0–3 h, più una serata «di domani» dalla corsa del giorno prima. Ogni caso soddisfa il suo criterio (contratto, sezione 12).</p>
+    <p class="state" id="demo-state">Stato: lettura del manifest…</p>
   </div>
 
   <h2>Dati del giorno</h2>
   <div class="card">
-    <p><a href="manifest.json">manifest.json</a>: stasera e domani, aggiornati dopo le corse ICON-D2 delle 06 e delle 12 UTC.</p>
-    <p class="state" id="live-state">Stato: non ancora attivo.</p>
+    <p><a href="manifest.json">manifest.json</a>: stasera e domani, generati da GitHub Actions dopo le corse ICON-D2 delle 06 e delle 12 UTC (alle 07:45 e alle 13:45 UTC).</p>
+    <p class="state" id="live-state">Stato: lettura del manifest…</p>
   </div>
 
   <h2>Crediti</h2>
@@ -74,7 +74,7 @@
       if (!m) return;
       const sere = m.evenings.map(e => e.date + (e.demo_case ? " (" + e.demo_case + ")" : "")).join(", ");
       document.getElementById(id).textContent = "Generato " + m.generated_at + ". Serate: " + sere + ".";
-    }).catch(() => {});
+    }).catch(() => { document.getElementById(id).textContent = "Stato: non disponibile."; });
   }
 </script>
 </body>

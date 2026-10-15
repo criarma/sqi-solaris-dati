@@ -35,6 +35,23 @@
         "coordinates": {"type": "array", "minItems": 1}
       }
     },
+    "zone_models": {
+      "type": "object",
+      "required": ["models", "lead_time_h", "lead_reliability", "within_calibrated_lead"],
+      "properties": {
+        "models": {
+          "type": "array", "minItems": 1, "maxItems": 2,
+          "items": {"type": "object", "required": ["name", "run"],
+                    "properties": {"name": {"enum": ["ICON-D2", "ICON-EU"]}, "run": {"$ref": "#/$defs/utc_datetime"}}}
+        },
+        "lead_time_h": {"type": "integer", "minimum": 0},
+        "lead_reliability": {"enum": ["calibrated", "measured_close", "measured_degraded", "unmeasured"]},
+        "within_calibrated_lead": {"type": "boolean"}
+      },
+      "if": {"properties": {"lead_reliability": {"const": "calibrated"}}},
+      "then": {"properties": {"within_calibrated_lead": {"const": true}}},
+      "else": {"properties": {"within_calibrated_lead": {"const": false}}}
+    },
     "band_prob": {
       "type": "object",
       "required": ["id", "max", "observed_rate", "n_calibration", "shown_rate", "shown_rate_source"],
@@ -52,8 +69,8 @@
 
     "manifest": {
       "type": "object",
-      "required": ["schema_version", "generated_at", "timezone", "engine", "evenings", "points", "coverage", "bands",
-                   "attribution", "demo"],
+      "required": ["schema_version", "generated_at", "timezone", "engine", "validated_season", "evenings", "points",
+                   "coverage", "bands", "attribution", "demo"],
       "properties": {
         "schema_version": {"const": "1.2"},
         "generated_at": {"$ref": "#/$defs/local_datetime"},
@@ -72,33 +89,36 @@
             "calibrated_lead_h_max": {"const": 3}
           }
         },
+        "validated_season": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "required": ["months"],
+             "properties": {"months": {"type": "array", "minItems": 1, "uniqueItems": true,
+                                       "items": {"type": "integer", "minimum": 1, "maximum": 12}}}}
+          ]
+        },
         "evenings": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["date", "weather_model", "lead_time_h", "within_calibrated_lead", "lead_reliability",
-                         "forecast", "potential"],
+            "required": ["date", "weather_models", "forecast", "potential"],
             "properties": {
               "date": {"$ref": "#/$defs/local_date"},
-              "weather_model": {
+              "weather_models": {
                 "type": "object",
-                "required": ["name", "run"],
-                "properties": {
-                  "name": {"const": "ICON-D2"},
-                  "run": {"$ref": "#/$defs/utc_datetime"}
-                }
+                "minProperties": 1,
+                "propertyNames": {"pattern": "^[a-z0-9_]+$"},
+                "additionalProperties": {"$ref": "#/$defs/zone_models"}
               },
-              "lead_time_h": {"type": "integer", "minimum": 0},
-              "within_calibrated_lead": {"type": "boolean"},
-              "lead_reliability": {"enum": ["calibrated", "measured_close", "measured_degraded", "unmeasured"]},
+              "weather_model": false,
+              "lead_time_h": false,
+              "lead_reliability": false,
+              "within_calibrated_lead": false,
               "forecast": {"type": "string", "pattern": "^forecast_\\d{4}-\\d{2}-\\d{2}_[0-9a-f]{6}\\.json$"},
               "potential": {"type": "string", "pattern": "^potential_\\d{4}-\\d{2}-\\d{2}_[0-9a-f]{6}\\.geojson$"},
               "demo_case": {"enum": ["dull", "worth", "spectacular", "low_deck", "clear", "sea_of_clouds"]}
-            },
-            "if": {"properties": {"lead_reliability": {"const": "calibrated"}}},
-            "then": {"properties": {"within_calibrated_lead": {"const": true}}},
-            "else": {"properties": {"within_calibrated_lead": {"const": false}}}
+            }
           }
         },
         "points": {
@@ -111,7 +131,7 @@
         },
         "bands": {
           "type": "object",
-          "required": ["worth", "spectacular", "potential"],
+          "required": ["worth", "spectacular"],
           "properties": {
             "worth": {"type": "array", "minItems": 2,
                       "items": {"allOf": [{"$ref": "#/$defs/band_prob"},
@@ -119,10 +139,7 @@
             "spectacular": {"type": "array", "minItems": 2,
                             "items": {"allOf": [{"$ref": "#/$defs/band_prob"},
                                                 {"properties": {"id": {"enum": ["low", "high"]}}}]}},
-            "potential": {"type": "array", "minItems": 2,
-                          "items": {"type": "object", "required": ["id", "max"],
-                                    "properties": {"id": {"enum": ["zero", "low", "mid", "high", "top"]},
-                                                   "max": {"type": ["number", "null"], "minimum": 0, "maximum": 1}}}}
+            "potential": false
           }
         },
         "diagnostics": {
@@ -278,7 +295,7 @@
                 "type": "object",
                 "required": ["band", "value_min", "value_max"],
                 "properties": {
-                  "band": {"enum": ["zero", "low", "mid", "high", "top"]},
+                  "band": {"enum": ["low", "mid", "high"]},
                   "value_min": {"type": "number", "minimum": 0, "maximum": 1},
                   "value_max": {"type": "number", "minimum": 0, "maximum": 1}
                 }

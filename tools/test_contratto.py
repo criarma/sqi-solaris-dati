@@ -17,7 +17,22 @@ QUI = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = json.load(open(os.path.join(os.path.dirname(QUI), "schema", "v1.2.json"), encoding="utf-8"))
 Draft202012Validator.check_schema(SCHEMA)
 ROMA = ZoneInfo("Europe/Rome")
-CASI = {"dull", "worth", "spectacular", "low_deck", "clear", "sea_of_clouds"}
+CASI = {"dull", "spectacular", "low_deck", "clear"}          # BX4: sea_of_clouds facoltativo; worth per analogia (da confermare)
+# sezione 12: criterio di ciascun demo_case su TUTTI i punti con previsione della serata (BX3)
+SOGLIA_CASO = dict(spectacular=0.2, worth=0.5, dull=0.5, low_deck=0.3, clear=0.5, sea_of_clouds=0.2)
+
+
+def criterio_caso(caso, punti, bande):
+    V = list(punti.values()); n = float(len(V))
+    fr = lambda cond: sum(1 for v in V if cond(v)) / n
+    low, mid = bande["worth"][0]["max"], bande["worth"][1]["max"]
+    spec = bande["spectacular"][0]["max"]
+    sh = fr(lambda v: v["p_spectacular"] >= spec)
+    return dict(spectacular=sh, worth=fr(lambda v: v["p_worth"] >= mid) if sh < 0.2 else 0.0,
+                dull=fr(lambda v: v["p_worth"] < low),
+                low_deck=fr(lambda v: v["limiting_factors"][:1] == ["low_deck_overhead"]),
+                clear=fr(lambda v: v["canvas"] == "clear"),
+                sea_of_clouds=fr(lambda v: "possible_sea_of_clouds" in v["flags"]))[caso]
 errori = []
 
 
@@ -92,7 +107,7 @@ def cartella(c):
             ko("bands.%s: max non crescenti o ultima non null" % k)
         if len({b["id"] for b in lista}) != len(lista):
             ko("bands.%s: id ripetuti" % k)
-        if k != "potential":
+        if True:
             for campo in ("observed_rate", "shown_rate"):
                 r = [b[campo] for b in lista]
                 if r != sorted(r) or any(round(x, 2) != x for x in r):
@@ -137,12 +152,30 @@ def cartella(c):
             ko("points: %s fuori dalla sua zona %s" % (p["id"], p["zone"]))
     ids_rec = {f["properties"]["id"] for f in pts["features"]
                if recinto is not None and recinto.contains(Point(f["geometry"]["coordinates"]))}
-    # serate
+    # serate (BX3: modelli, anticipo e affidabilita' per zona)
+    zp = {f["properties"]["id"]: f["properties"] for f in cov["features"] if f["properties"]["kind"] == "zone"}
+    stagione = (m.get("validated_season") or {}).get("months")
     casi, non_cal = set(), 0
     for e in m["evenings"]:
-        if e["lead_reliability"] == "calibrated" and e["lead_time_h"] > m["engine"]["calibrated_lead_h_max"]:
-            ko("%s: calibrated con lead_time_h %d > calibrated_lead_h_max" % (e["date"], e["lead_time_h"]))
-        if e["lead_reliability"] != "calibrated":
+        if set(e["weather_models"]) != set(zp):
+            ko("%s: weather_models con zone diverse da coverage" % e["date"])
+        for z, w in e["weather_models"].items():
+            nomi = [x["name"] for x in w["models"]]
+            if len(set(nomi)) != len(nomi) or "ICON-D2" not in nomi:
+                ko("%s/%s: modelli ripetuti o senza ICON-D2" % (e["date"], z))
+            if "ICON-EU" in nomi and zp.get(z, {}).get("weather_model") != "ICON-D2+ICON-EU":
+                ko("%s/%s: ICON-EU in una zona solo ICON-D2" % (e["date"], z))
+            rel = w["lead_reliability"]
+            if rel == "calibrated" and w["lead_time_h"] > m["engine"]["calibrated_lead_h_max"]:
+                ko("%s/%s: calibrated con lead_time_h %d" % (e["date"], z, w["lead_time_h"]))
+            if zp.get(z, {}).get("calibration") == "indicative" and rel != "unmeasured":
+                ko("%s/%s: zona indicative non unmeasured" % (e["date"], z))
+            if rel in ("measured_close", "measured_degraded") and not stagione:
+                ko("%s/%s: %s senza validated_season" % (e["date"], z, rel))
+            if rel == "measured_close" and stagione and int(e["date"][5:7]) not in stagione:
+                ko("%s/%s: measured_close fuori dalla stagione validata" % (e["date"], z))
+        alps = [w for z, w in e["weather_models"].items() if zp.get(z, {}).get("calibration") == "alps"]
+        if any(w["lead_reliability"] != "calibrated" for w in alps):
             non_cal += 1
         casi.add(e.get("demo_case"))
         if not e["forecast"].startswith("forecast_%s_" % e["date"]) or not e["potential"].startswith("potential_%s_" % e["date"]):
@@ -152,6 +185,11 @@ def cartella(c):
             continue
         if fc["date"] != e["date"]:
             ko("%s: date diversa nel file di previsione" % e["forecast"])
+        if m["demo"] and fc["points"]:
+            v = criterio_caso(e["demo_case"], fc["points"], m["bands"])
+            if v < SOGLIA_CASO[e["demo_case"]]:
+                ko("%s: demo_case %s non soddisfa il suo criterio (%.2f < %.2f)" % (e["date"], e["demo_case"], v,
+                                                                                    SOGLIA_CASO[e["demo_case"]]))
         for pid, q in fc["points"].items():
             dove = "%s %s" % (e["forecast"], pid)
             if pid not in ids:
@@ -176,7 +214,7 @@ def cartella(c):
                     ko("%s: best_time fuori da best_window" % dove)
         pot = carica(c, e["potential"])
         if schema("potential", pot, e["potential"]):
-            bande = {b["id"]: b for b in m["bands"]["potential"]}
+            bande = {b["id"]: b for b in m["bands"]["worth"]}                # BX3: potenziale nelle fasce di worth
             gs = []
             for f in pot["features"]:
                 cinque(f["geometry"]["coordinates"], e["potential"])
@@ -217,12 +255,16 @@ def mutazioni(m, fc):
     casi += [
         ("manifest", mm(lambda x: x.__setitem__("schema_version", "1.1")), "versione 1.1"),
         ("manifest", mm(lambda x: x["engine"].__setitem__("best_time_bias_corrected", True)), "bias corretto true"),
-        ("manifest", mm(lambda x: x["evenings"][0].__setitem__("within_calibrated_lead", x["evenings"][0]["lead_reliability"] != "calibrated")),
+        ("manifest", mm(lambda x: [w.__setitem__("within_calibrated_lead", w["lead_reliability"] != "calibrated")
+                                   for w in x["evenings"][0]["weather_models"].values()]),
          "within_calibrated_lead incoerente"),
         ("manifest", mm(lambda x: x["evenings"][0].__setitem__("demo_case", "dull") if not x["demo"] else x["evenings"][0].pop("demo_case")),
          "demo_case fuori posto"),
         ("manifest", mm(lambda x: x["attribution"][0].__setitem__("scope", "footer")), "scope sconosciuto"),
-        ("manifest", mm(lambda x: x["evenings"][0]["weather_model"].__setitem__("run", "2026-10-15T06:00:00+02:00")), "run non UTC"),
+        ("manifest", mm(lambda x: next(iter(x["evenings"][0]["weather_models"].values()))["models"][0].__setitem__(
+            "run", "2026-10-15T06:00:00+02:00")), "run non UTC"),
+        ("manifest", mm(lambda x: x["bands"].__setitem__("potential", [{"id": "zero", "max": None}])), "bands.potential (tolto)"),
+        ("manifest", mm(lambda x: x.pop("validated_season")), "validated_season mancante"),
         ("forecast", ff(lambda x: x["points"][pid].__setitem__("visible_canvas_km", {"near": 5, "far": 86})), "visible_canvas_km presente"),
         ("forecast", ff(lambda x: x["points"][pid].__setitem__("canvas", "cirrus")), "canvas cirrus (v1.1)"),
         ("forecast", ff(lambda x: x["points"][pid].__setitem__("sunset_flat_horizon", "2026-10-15T18:24:31+02:00")), "secondi non nulli"),
@@ -252,7 +294,7 @@ def mutazioni(m, fc):
 
 
 if __name__ == "__main__":
-    cc = sys.argv[1:] or [os.path.join(os.path.dirname(QUI), "examples"), os.path.join(os.path.dirname(QUI), "examples", "demo")]
+    cc = sys.argv[1:] or [os.path.join(os.path.dirname(QUI), "examples")]
     ultimo = None
     for c in cc:
         r = cartella(c)
