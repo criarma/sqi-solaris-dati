@@ -17,7 +17,7 @@ QUI = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = json.load(open(os.path.join(os.path.dirname(QUI), "schema", "v1.2.json"), encoding="utf-8"))
 Draft202012Validator.check_schema(SCHEMA)
 ROMA = ZoneInfo("Europe/Rome")
-CASI = {"dull", "spectacular", "low_deck", "clear"}          # BX4: sea_of_clouds facoltativo; worth per analogia (da confermare)
+CASI = {"dull", "worth", "spectacular", "low_deck", "clear"}          # BY6: sea_of_clouds facoltativo
 # sezione 12: criterio di ciascun demo_case su TUTTI i punti con previsione della serata (BX3)
 SOGLIA_CASO = dict(spectacular=0.2, worth=0.5, dull=0.5, low_deck=0.3, clear=0.5, sea_of_clouds=0.2)
 
@@ -28,7 +28,7 @@ def criterio_caso(caso, punti, bande):
     low, mid = bande["worth"][0]["max"], bande["worth"][1]["max"]
     spec = bande["spectacular"][0]["max"]
     sh = fr(lambda v: v["p_spectacular"] >= spec)
-    return dict(spectacular=sh, worth=fr(lambda v: v["p_worth"] >= mid) if sh < 0.2 else 0.0,
+    return dict(spectacular=sh, worth=fr(lambda v: v["p_worth"] >= low and v["p_spectacular"] < spec),   # BY6
                 dull=fr(lambda v: v["p_worth"] < low),
                 low_deck=fr(lambda v: v["limiting_factors"][:1] == ["low_deck_overhead"]),
                 clear=fr(lambda v: v["canvas"] == "clear"),
