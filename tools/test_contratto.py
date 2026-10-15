@@ -93,9 +93,13 @@ def cartella(c):
         if len({b["id"] for b in lista}) != len(lista):
             ko("bands.%s: id ripetuti" % k)
         if k != "potential":
-            r = [b["observed_rate"] for b in lista]
-            if r != sorted(r) or any(round(x, 2) != x for x in r):
-                ko("bands.%s: observed_rate non crescenti o non a 2 decimali" % k)
+            for campo in ("observed_rate", "shown_rate"):
+                r = [b[campo] for b in lista]
+                if r != sorted(r) or any(round(x, 2) != x for x in r):
+                    ko("bands.%s: %s non crescenti o non a 2 decimali" % (k, campo))
+            for b in lista:
+                if b["shown_rate_source"] == "calibration_sample" and b["shown_rate"] != b["observed_rate"]:
+                    ko("bands.%s/%s: shown_rate diverso da observed_rate con fonte calibration_sample" % (k, b["id"]))
     orario(m["generated_at"], "manifest", "generated_at")
     soglia_low = m["bands"]["worth"][0]["max"]
     # copertura e punti
@@ -233,7 +237,7 @@ def mutazioni(m, fc):
     if senza:
         casi.append(("forecast", ff(lambda x: x["points"][senza].__setitem__("visible_canvas_max_km", 80)),
                      "visible_canvas_max_km senza tela da nube"))
-        casi.append(("manifest", mm(lambda x: x["bands"]["worth"][0].pop("rate_source")), "rate_source mancante"))
+        casi.append(("manifest", mm(lambda x: x["bands"]["worth"][0].pop("shown_rate_source")), "shown_rate_source mancante"))
     if senza:
         casi.append(("forecast", ff(lambda x: x["points"][senza].__setitem__("best_time", "2026-10-15T18:00:00+02:00")),
                      "best_time con tela none"))

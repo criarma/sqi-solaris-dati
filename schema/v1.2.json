@@ -37,14 +37,17 @@
     },
     "band_prob": {
       "type": "object",
-      "required": ["id", "max", "observed_rate", "n_calibration", "rate_source"],
+      "required": ["id", "max", "observed_rate", "n_calibration", "shown_rate", "shown_rate_source"],
       "properties": {
         "id": {"type": "string"},
         "max": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
         "observed_rate": {"$ref": "#/$defs/probability"},
         "n_calibration": {"type": "integer", "minimum": 1},
-        "rate_source": {"enum": ["calibration_sample", "pool_model"]}
-      }
+        "shown_rate": {"$ref": "#/$defs/probability"},
+        "shown_rate_source": {"enum": ["calibration_sample", "pool_model"]}
+      },
+      "if": {"properties": {"shown_rate_source": {"const": "calibration_sample"}}},
+      "then": {"description": "shown_rate == observed_rate: verificato da test_contratto.py"}
     },
 
     "manifest": {
@@ -303,12 +306,13 @@
                 "oneOf": [
                   {
                     "type": "object",
-                    "required": ["kind", "id", "name", "calibration", "reference_point"],
+                    "required": ["kind", "id", "name", "calibration", "weather_model", "reference_point"],
                     "properties": {
                       "kind": {"const": "zone"},
                       "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
                       "name": {"type": "string"},
                       "calibration": {"enum": ["alps", "indicative"]},
+                      "weather_model": {"enum": ["ICON-D2", "ICON-D2+ICON-EU"]},
                       "reference_point": {"$ref": "#/$defs/lonlat"}
                     }
                   },
