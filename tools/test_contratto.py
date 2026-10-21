@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Test del contratto v1.2: ogni file di una cartella pubblicata (manifest + file citati) contro schema/v1.2.json, piu'
-i vincoli della sezione 9 di v1.2.md che lo schema non esprime, piu' mutazioni che lo schema DEVE rifiutare.
+"""Test del contratto v1.3: ogni file di una cartella pubblicata (manifest + file citati) contro schema/v1.3.json, piu'
+i vincoli della sezione 9 di v1.3.md che lo schema non esprime, piu' mutazioni che lo schema DEVE rifiutare.
 
   python contratto/test_contratto.py [cartella ...]     (senza argomenti: contratto/esempi e contratto/esempi/demo)
 Codice d'uscita 0 solo se tutto passa.
@@ -14,7 +14,7 @@ from shapely.geometry import Point, shape
 from shapely.ops import unary_union
 
 QUI = os.path.dirname(os.path.abspath(__file__))
-SCHEMA = json.load(open(os.path.join(os.path.dirname(QUI), "schema", "v1.2.json"), encoding="utf-8"))
+SCHEMA = json.load(open(os.path.join(os.path.dirname(QUI), "schema", "v1.3.json"), encoding="utf-8"))
 Draft202012Validator.check_schema(SCHEMA)
 ROMA = ZoneInfo("Europe/Rome")
 CASI = {"dull", "worth", "spectacular", "low_deck", "clear"}          # BY6: sea_of_clouds facoltativo
@@ -42,7 +42,7 @@ def validatore(nome):
     return Draft202012Validator(s)
 
 
-V = {n: validatore(n) for n in ("manifest", "points", "forecast", "potential", "coverage")}
+V = {n: validatore(n) for n in ("manifest", "points", "points_lite", "places", "forecast", "potential", "coverage")}
 
 
 def ko(msg):
@@ -115,7 +115,9 @@ def cartella(c):
             for b in lista:
                 if b["shown_rate_source"] == "calibration_sample" and b["shown_rate"] != b["observed_rate"]:
                     ko("bands.%s/%s: shown_rate diverso da observed_rate con fonte calibration_sample" % (k, b["id"]))
-    orario(m["generated_at"], "manifest", "generated_at")
+    ga = orario(m["generated_at"], "manifest", "generated_at")
+    if orario(m["next_expected_at"], "manifest", "next_expected_at") <= ga:              # v1.3
+        ko("manifest: next_expected_at non successivo a generated_at")
     soglia_low = m["bands"]["worth"][0]["max"]
     # copertura e punti
     cov = carica(c, m["coverage"]["file"])
@@ -150,6 +152,30 @@ def cartella(c):
             ko("points: %s in zona inesistente %s" % (p["id"], p["zone"]))
         elif not zone[p["zone"]].buffer(2e-5).contains(Point(f["geometry"]["coordinates"])):
             ko("points: %s fuori dalla sua zona %s" % (p["id"], p["zone"]))
+    # v1.3: file leggero = sottoinsieme del completo, luoghi, place_hint verso places
+    lite = carica(c, m["points"]["lite_file"])
+    schema("points_lite", lite, m["points"]["lite_file"])
+    completo = {f["properties"]["id"]: f for f in pts["features"]}
+    if {f["properties"]["id"] for f in lite["features"]} != set(completo):
+        ko("points_lite: id diversi dal file completo")
+    for f in lite["features"]:
+        g = completo.get(f["properties"]["id"])
+        if g is None:
+            continue
+        if f["geometry"] != g["geometry"] or any(f["properties"].get(k) != g["properties"].get(k)
+                                                 for k in ("name", "name_source", "place_hint", "kind", "elevation_m")):
+            ko("points_lite: %s diverso dal file completo" % f["properties"]["id"])
+    pl = carica(c, m["places"]["file"])
+    schema("places", pl, m["places"]["file"])
+    luoghi = [f["properties"]["id"] for f in pl["features"]]
+    if len(set(luoghi)) != len(luoghi):
+        ko("places: id ripetuti")
+    for f in pl["features"]:
+        cinque(f["geometry"]["coordinates"], "places")
+    for f in pts["features"]:
+        h = f["properties"].get("place_hint")
+        if h and h["ref_id"] not in set(luoghi):
+            ko("points: %s place_hint verso un luogo assente da places" % f["properties"]["id"])
     ids_rec = {f["properties"]["id"] for f in pts["features"]
                if recinto is not None and recinto.contains(Point(f["geometry"]["coordinates"]))}
     # serate (BX3: modelli, anticipo e affidabilita' per zona)
@@ -208,6 +234,9 @@ def cartella(c):
                 ko("%s: tramonto in un'altra data" % dove)
             if "sun_hidden_at" in q:
                 orario(q["sun_hidden_at"], dove, "sun_hidden_at")
+            if "canvas_last_light" in q:                       # v1.3: arrotondato per difetto ai 5 minuti
+                if orario(q["canvas_last_light"], dove, "canvas_last_light").minute % 5:
+                    ko("%s: canvas_last_light non sui 5 minuti" % dove)
             if "best_time" in q:
                 b, w = orario(q["best_time"], dove, "best_time"), q["best_window"]
                 if not orario(w["start"], dove, "start") <= b <= orario(w["end"], dove, "end"):
@@ -239,10 +268,10 @@ def cartella(c):
         if non_cal == 0:
             ko("demo: manca una serata non calibrated")
     print("  serate %d, punti %d (recintati %d), errori finora %d" % (len(m["evenings"]), len(ids), len(ids_rec), len(errori)))
-    return m, fc
+    return m, fc, pts
 
 
-def mutazioni(m, fc):
+def mutazioni(m, fc, pts):
     """lo schema DEVE rifiutare ciascuna di queste"""
     pid = next(iter(fc["points"]))
     casi = []
@@ -252,7 +281,33 @@ def mutazioni(m, fc):
 
     def ff(f):
         x = copy.deepcopy(fc); f(x); return x
+    def pp(f):
+        x = copy.deepcopy(pts); f(x); return x
+    con_nome = next(f for f in pts["features"] if f["properties"]["name"] is not None)
+    i_nome = pts["features"].index(con_nome)
     casi += [
+        ("manifest", mm(lambda x: x.__setitem__("schema_version", "1.2")), "versione 1.2"),
+        ("manifest", mm(lambda x: x.pop("next_expected_at")), "next_expected_at mancante"),
+        ("manifest", mm(lambda x: x["points"].pop("lite_file")), "lite_file mancante"),
+        ("manifest", mm(lambda x: x.pop("places")), "places mancante"),
+        ("forecast", ff(lambda x: x["points"][pid].__setitem__("tier", 4)), "tier 4"),
+        ("forecast", ff(lambda x: x["points"][pid].pop("low_cloud")), "low_cloud mancante"),
+        ("forecast", ff(lambda x: x["points"][pid].__setitem__("low_cloud", {"cover": "none", "relation": "unknown",
+                                                                               "model_terrain_above_point": False})),
+         "cover none con relation non null"),
+        ("forecast", ff(lambda x: x["points"][pid].__setitem__("low_cloud", {"cover": "broken", "relation": None,
+                                                                               "model_terrain_above_point": False})),
+         "cover broken con relation null"),
+        ("forecast", ff(lambda x: x["points"][pid].__setitem__("low_cloud", {"cover": "few", "relation": None,
+                                                                               "model_terrain_above_point": False})),
+         "cover sconosciuta"),
+        ("forecast", ff(lambda x: x["points"][pid].__setitem__("low_cloud", {"cover": "none", "relation": None})),
+         "model_terrain_above_point mancante"),
+        ("points", pp(lambda x: x["features"][i_nome]["properties"].__setitem__("place_hint", {
+            "ref_id": "osm:node/1", "ref_name": "X", "ref_kind": "village", "relation": "near", "distance_km": 0.5,
+            "bearing_deg": 10})), "place_hint con name presente"),
+        ("points", pp(lambda x: x["features"][i_nome]["properties"].__setitem__("name", None)), "name null senza place_hint"),
+        ("points", pp(lambda x: x["features"][i_nome]["properties"].__setitem__("name_source", "wiki")), "name_source sconosciuto"),
         ("manifest", mm(lambda x: x.__setitem__("schema_version", "1.1")), "versione 1.1"),
         ("manifest", mm(lambda x: x["engine"].__setitem__("best_time_bias_corrected", True)), "bias corretto true"),
         ("manifest", mm(lambda x: [w.__setitem__("within_calibrated_lead", w["lead_reliability"] != "calibrated")
@@ -283,6 +338,8 @@ def mutazioni(m, fc):
     if senza:
         casi.append(("forecast", ff(lambda x: x["points"][senza].__setitem__("best_time", "2026-10-15T18:00:00+02:00")),
                      "best_time con tela none"))
+        casi.append(("forecast", ff(lambda x: x["points"][senza].__setitem__("canvas_last_light", "2026-10-15T18:00:00+02:00")),
+                     "canvas_last_light con tela none"))
     mare = next((k for k, q in fc["points"].items() if "possible_sea_of_clouds" in q["flags"]), None)
     if mare:
         casi.append(("forecast", ff(lambda x: x["points"][mare].__setitem__("limiting_factors", ["low_deck_overhead"])),
@@ -294,7 +351,7 @@ def mutazioni(m, fc):
 
 
 if __name__ == "__main__":
-    cc = sys.argv[1:] or [os.path.join(os.path.dirname(QUI), "examples")]
+    cc = sys.argv[1:] or [os.path.join(QUI, "esempi")]
     ultimo = None
     for c in cc:
         r = cartella(c)

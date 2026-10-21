@@ -3,10 +3,11 @@
 Dati del motore SQI (qualità del tramonto) per l'app Solaris, pubblicati con
 GitHub Pages: <https://criarma.github.io/sqi-solaris-dati/>.
 
-- `contratto/v1.2.md`: il contratto dati.
-- `schema/v1.2.json`: lo schema JSON. Contratto e schema sono l'unica fonte
+- `contratto/v1.3.md`: il contratto dati.
+- `schema/v1.3.json`: lo schema JSON. Contratto e schema sono l'unica fonte
   per entrambe le parti.
-- `examples/`: esempi per file. `examples/demo/` ha date segnaposto.
+- `examples/`: esempi per file. `demo/`: la demo, serate vere d'archivio.
+- `nomi_curati.json`: nomi curati dei punti `{id: nome}`, applicati sopra il nome OSM (v1.3).
 - `demo/`: la demo vera, con serate passate calcolate dal motore congelato.
 - `manifest.json` e i file che cita, nella radice: i dati del giorno (quando
   attivi).
